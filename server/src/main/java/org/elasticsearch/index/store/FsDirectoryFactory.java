@@ -67,12 +67,16 @@ public class FsDirectoryFactory implements IndexStorePlugin.DirectoryFactory {
                 // Use Lucene defaults
                 final FSDirectory primaryDirectory = FSDirectory.open(location, lockFactory);
                 if (primaryDirectory instanceof MMapDirectory mMapDirectory) {
-                    return new HybridDirectory(lockFactory, setPreload(mMapDirectory, lockFactory, preLoadExtensions));
+                    Directory dir = new HybridDirectory(lockFactory, setPreload(mMapDirectory, lockFactory, preLoadExtensions));
+                    dir = disableRandomAdvice(dir);
+                    return dir;
                 } else {
                     return primaryDirectory;
                 }
             case MMAPFS:
-                return setPreload(new MMapDirectory(location, lockFactory), lockFactory, preLoadExtensions);
+                Directory dir = setPreload(new MMapDirectory(location, lockFactory), lockFactory, preLoadExtensions);
+                dir = disableRandomAdvice(dir);
+                return dir;
             case SIMPLEFS:
             case NIOFS:
                 return new NIOFSDirectory(location, lockFactory);
@@ -92,6 +96,23 @@ public class FsDirectoryFactory implements IndexStorePlugin.DirectoryFactory {
             }
         }
         return mMapDirectory;
+    }
+
+    /**
+     * Return a {@link FilterDirectory} around the provided {@link Directory} that forcefully disables {@link IOContext#RANDOM random
+     * access}.
+     */
+    static Directory disableRandomAdvice(Directory dir) {
+        return new FilterDirectory(dir) {
+            @Override
+            public IndexInput openInput(String name, IOContext context) throws IOException {
+                if (context.randomAccess) {
+                    context = IOContext.READ;
+                }
+                assert context.randomAccess == false;
+                return super.openInput(name, context);
+            }
+        };
     }
 
     /**
